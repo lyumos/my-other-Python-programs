@@ -4,6 +4,7 @@ import os
 from bs4 import BeautifulSoup
 import re
 
+
 # Проверка наличия утилиты svgo
 try:
     svgo_version = subprocess.check_output(["svgo", "--version"]).decode()
@@ -12,13 +13,33 @@ try:
 except (FileNotFoundError, Exception):
     subprocess.check_call(["npm", "install", "-g", "svgo@1.3.2"])
 
-
 # Путь к папке с SVG файлами
-folder_path = "FOLDER_WITH_SVG"
+folder_path = "FOLDER_PATH"
 
 # Получить список файлов SVG в папке
 svg_files = glob.glob(folder_path + "/*.svg")
 
+for svg_file in svg_files:
+    if re.search('[а-яА-Я ]', svg_file):
+        with open(f'{svg_file}', 'r', encoding='utf-8') as f:
+            svg_content = f.read()
+
+            soup = BeautifulSoup(svg_content, 'xml')
+
+            view_box_str = soup.svg.get('viewBox', None)
+            view_box_list = list(map(float, view_box_str.split()))
+
+            width = view_box_list[2] - view_box_list[0]
+            height = view_box_list[3] - view_box_list[1]
+
+            new_name = f"{int(width)}x{int(height)}.svg"
+
+            # Переименовать файл, если новое имя отличается от старого
+            if new_name != os.path.basename(svg_file):
+                os.rename(svg_file, os.path.join(os.path.dirname(svg_file), new_name))
+
+# Получить список файлов SVG в папке
+svg_files = glob.glob(folder_path + "/*.svg")
 # Применить scour и svgo к каждому файлу
 for svg_file in svg_files:
     # scour
@@ -29,8 +50,8 @@ for svg_file in svg_files:
     svgo_command = f"svgo {svg_file}_scoured.svg -o {svg_file}_done.svg --disable=addClassesToSVGElement --disable=cleanupAttrs --disable=cleanupListOfValues --disable=collapseGroups --disable=convertStyleToAttrs --disable=moveElemsAttrsToGroup --disable=prefixIds --disable=preset-default --disable=removeAttributesBySelector --disable=removeAttrs --disable=removeDimensions --disable=removeEditorsNSData --disable=removeViewBox --disable=removeXMLNS --disable=sortAttrs --enable=removeScriptElement"
     subprocess.run(svgo_command, shell=True)
 
-    file_size_kb = round(os.path.getsize(f'{svg_file}_done.svg')/1024, 3)
-    print(f"\nРазмер файла: {file_size_kb} КБ")
+    file_size_kb = round(os.path.getsize(f'{svg_file}_done.svg') / 1024, 3)
+    print(f"\nИтоговый размер файла: {file_size_kb} КБ")
 
     # Удалить промежуточный файл
     subprocess.run(f"rm {svg_file}_scoured.svg", shell=True)
@@ -54,9 +75,28 @@ for svg_file in svg_files:
                     print(f'Удален атрибут тега с кириллицей: {element.name} => {key}: {attributes[key]}\n')
                     del attributes[key]
 
-
         svg_content = str(soup)
         svg_content = re.sub(r'<\?xml[^>]*>\s*', '', svg_content)
 
-    with open(f'{svg_file}_done.svg', 'w', encoding='utf-8') as f:
-        f.write(svg_content)
+        # получаем параметры viewbox
+        view_box_str = soup.svg.get('viewBox', None)
+
+        if view_box_str is not None:
+            # конвертируем параметры viewbox так, чтобы они были списком из 4 чисел
+            view_box_list = list(map(float, view_box_str.split()))
+
+            width = view_box_list[2] - view_box_list[0]
+            height = view_box_list[3] - view_box_list[1]
+            size_names = {'login': 304, 'header': 229, 'mobile_header': 89}
+            flag = False
+            for key, value in size_names.items():
+                if int(width) + int(height) == value:
+                    flag = True
+                    print('тут!')
+                    with open(f'{folder_path}/{key}.svg', 'w', encoding='utf-8') as f:
+                        f.write(svg_content)
+                    subprocess.run(f"rm {svg_file}_done.svg", shell=True)
+            if not flag:
+                print(f'\nWarning: Размеры файла не совпадают!\nWidth: {int(width)}\nHeight: {int(height)}')
+                with open(f'{svg_file}_done.svg', 'w', encoding='utf-8') as f:
+                    f.write(svg_content)
